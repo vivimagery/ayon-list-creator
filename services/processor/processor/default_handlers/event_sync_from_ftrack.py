@@ -11,6 +11,7 @@ from ayon_api import (
     get_folders,
     get_tasks,
     slugify_string,
+    update_version,
 )
 
 from ayon_api.entity_hub import EntityHub
@@ -51,7 +52,7 @@ DEFAULT_ATTRS_MAPPING = {
 
 
 class SyncProcess:
-    interest_base_types = ["show", "task"]
+    interest_base_types = ["show", "task", "assetversion"]
     ignore_ent_types = ["Milestone"]
     ignore_change_keys = [
         "thumbid",
@@ -1483,6 +1484,79 @@ class SyncProcess:
             self.log.debug(
                 f"Changed status {prev_status_name} -> {new_status_name}")
 
+    def _propagate_version_status_changes(self, version_status_changes):
+        if not version_status_changes:
+            return
+
+        project_entity = self.entity_hub.project_entity
+        ayon_statuses_by_name = {
+            status.name.lower(): status
+            for status in project_entity.statuses
+        }
+        ft_status_names_by_id = self.ft_status_names_by_id
+
+        try:
+            attr_conf = self.session.query(
+                f"CustomAttributeConfiguration where key is '{CUST_ATTR_KEY_SERVER_ID}'"
+            ).one()
+            ayon_id_attr_id = attr_conf["id"]
+        except Exception:
+            self.log.warning(f"Custom attribute '{CUST_ATTR_KEY_SERVER_ID}' not found.")
+            return
+
+        for ftrack_id, info in version_status_changes.items():
+            new_status_id = info["changes"]["statusid"]["new"]
+            ftrack_status_name = ft_status_names_by_id.get(new_status_id)
+            if not ftrack_status_name:
+                self.log.warning(f"Status with id '{new_status_id}' not found.")
+                continue
+
+            value_items = self.session.query((
+                "select value from CustomAttributeValue"
+                f" where entity_id is '{ftrack_id}'"
+                f" and configuration_id is '{ayon_id_attr_id}'"
+            )).all()
+            ayon_version_id = None
+            for item in value_items:
+                if item["value"]:
+                    ayon_version_id = item["value"]
+                    break
+
+            if not ayon_version_id:
+                continue
+
+            version_entity = self.entity_hub.get_or_fetch_entity_by_id(
+                ayon_version_id, ["version"]
+            )
+            if not version_entity:
+                self.log.warning(
+                    f"Could not find AYON version with id '{ayon_version_id}'"
+                )
+                continue
+
+            ftrack_status_name_low = str(ftrack_status_name).lower()
+            ayon_status = ayon_statuses_by_name.get(ftrack_status_name_low)
+
+            if ayon_status is None:
+                self.log.debug(
+                    f"AYON status '{ftrack_status_name}' not found for project"
+                    f" '{self.project_name}'. Skipping."
+                )
+                continue
+
+            if "version" not in ayon_status.scope and "product" not in ayon_status.scope:
+                self.log.debug(
+                    f"AYON status '{ayon_status.name}' is not scoped for"
+                    " versions/products. Skipping."
+                )
+                continue
+
+            version_entity.status = ayon_status.name
+            self.log.info(
+                "Updated AYON version '%s' status to '%s' in memory.",
+                ayon_version_id, ayon_status.name
+            )
+
     def _propagate_attrib_changes(self):
         # Prepare all created ftrack ids
         # - in that case it is not needed to update attributes as they have
@@ -1490,8 +1564,14 @@ class SyncProcess:
         created_ftrack_ids = set(self._created_entity_by_ftrack_id.keys())
         task_type_changes = {}
         status_changes = {}
+        version_status_changes = {}
         for ftrack_id, info in self.entities_by_action["update"].items():
             if ftrack_id in created_ftrack_ids:
+                continue
+
+            if info["entityType"] == "assetversion":
+                if "statusid" in info["changes"]:
+                    version_status_changes[ftrack_id] = info
                 continue
 
             entity = None
@@ -1513,6 +1593,10 @@ class SyncProcess:
                     )
 
             if entity is None:
+                self.log.debug(
+                    f"Skipping attribute changes for {info['entityType']} {ftrack_id}"
+                    " because AYON entity was not found."
+                )
                 continue
 
             attrib_changes = {}
@@ -1574,6 +1658,7 @@ class SyncProcess:
 
                 entity.attribs[dst_key] = value
 
+        self._propagate_version_status_changes(version_status_changes)
         self._propagate_task_type_changes(task_type_changes)
         self._propagate_status_changes(status_changes)
 
