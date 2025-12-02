@@ -3,6 +3,7 @@
 import uuid
 import threading
 import datetime
+import logging
 from typing import List, Dict, Set
 import time
 
@@ -50,7 +51,14 @@ class AyonListCreator:
         self.run_minute = run_minute
         self._timer = None
         self._day_delta = datetime.timedelta(days=1)
-        self.log = ayon_api.Logger.get_logger(self.__class__.__name__)
+        self.log = logging.getLogger(self.__class__.__name__)
+
+        # Configure logging if not already configured
+        if not logging.getLogger().handlers:
+            logging.basicConfig(
+                level=logging.INFO,
+                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            )
 
     def _calculate_next_run_time(self) -> float:
         """Calculate seconds until next scheduled run.
