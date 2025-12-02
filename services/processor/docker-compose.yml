@@ -1,11 +1,13 @@
-name: ayon-ftrack-services
+name: ayon-list-creator-services
 services:
   processor:
-    container_name: processor
+    container_name: list-creator-processor
     image: ynput/ayon-ftrack-processor:1.0.0
     restart: unless-stopped
     environment:
       - "AYON_SERVER_URL=${AYON_SERVER_URL}"
       - "AYON_API_KEY=${AYON_API_KEY}"
-      - "AYON_ADDON_NAME=ftrack"
+      - "AYON_ADDON_NAME=list_creator"
       - "AYON_ADDON_VERSION=1.0.0"
+      - "LIST_CREATOR_RUN_HOUR=${LIST_CREATOR_RUN_HOUR:-9}"
+      - "LIST_CREATOR_RUN_MINUTE=${LIST_CREATOR_RUN_MINUTE:-0}"

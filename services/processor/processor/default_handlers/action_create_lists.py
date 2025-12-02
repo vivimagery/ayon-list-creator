@@ -1,5 +1,6 @@
 """AYON List Creator - Daily processor for tracking new projects."""
 
+import os
 import uuid
 import threading
 import datetime
@@ -40,13 +41,21 @@ class AyonListCreator:
     # AYON project to track
     TARGET_PROJECT = "ImmersRender"
 
-    def __init__(self, run_hour: int = 9, run_minute: int = 0):
+    def __init__(self, run_hour: int = None, run_minute: int = None):
         """Initialize the list creator.
 
         Args:
-            run_hour: Hour of day to run (0-23), default 9 AM
-            run_minute: Minute of hour to run (0-59), default 0
+            run_hour: Hour of day to run (0-23). If None, reads from
+                     LIST_CREATOR_RUN_HOUR env var (default: 9)
+            run_minute: Minute of hour to run (0-59). If None, reads from
+                       LIST_CREATOR_RUN_MINUTE env var (default: 0)
         """
+        # Read from environment variables if not provided
+        if run_hour is None:
+            run_hour = int(os.getenv('LIST_CREATOR_RUN_HOUR', '9'))
+        if run_minute is None:
+            run_minute = int(os.getenv('LIST_CREATOR_RUN_MINUTE', '0'))
+
         self.run_hour = run_hour
         self.run_minute = run_minute
         self._timer = None
