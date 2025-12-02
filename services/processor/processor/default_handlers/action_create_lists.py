@@ -103,7 +103,9 @@ class AyonListCreator:
             existing_lists = response.data.get("lists", [])
 
             for existing_list in existing_lists:
-                if existing_list.get("label") == list_name:
+                # Check both 'name' and 'label' fields
+                if (existing_list.get("name") == list_name or
+                    existing_list.get("label") == list_name):
                     self.log.debug(
                         f"Found existing list '{list_name}' in project '{project_name}'"
                     )
@@ -115,20 +117,17 @@ class AyonListCreator:
 
         # Create new list
         self.log.info(f"Creating new list '{list_name}' in project '{project_name}'")
-        list_id = str(uuid.uuid4().hex)[:24]
 
         payload = {
-            "id": list_id,
-            "entityListType": "generic",
-            "entityType": "folder",
-            "label": list_name,
-            "active": True,
-            "items": []
+            "name": list_name,
+            "entityType": "folder"
         }
 
         try:
             response = ayon_api.post(f"projects/{project_name}/lists", **payload)
             response.raise_for_status()
+            list_data = response.data
+            list_id = list_data.get("id")
             self.log.info(f"Created list '{list_name}' with ID: {list_id}")
             return {"id": list_id, "label": list_name}
         except Exception as e:
@@ -204,9 +203,7 @@ class AyonListCreator:
             folder_id: ID of the folder to add
             folder_name: Name of the folder (for logging)
         """
-        item_id = str(uuid.uuid4().hex)[:24]
         payload = {
-            "id": item_id,
             "entityId": folder_id
         }
 
