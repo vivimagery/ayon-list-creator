@@ -151,12 +151,45 @@ def create_services_zip(output_dir: Path):
     logging.info(f"Created: {zip_path}")
 
 
-def create_package(output_dir: Path = None, skip_zip: bool = False):
+def create_final_zip(package_dir: Path) -> Path:
+    """Create final zip archive of the package.
+
+    Args:
+        package_dir: Directory containing the package files.
+
+    Returns:
+        Path to the created zip file.
+    """
+    logging.info("Creating final package zip...")
+
+    # Create zip in the package root (not inside the version folder)
+    zip_name = f"{ADDON_NAME}-{ADDON_VERSION}.zip"
+    zip_path = package_dir.parent.parent / zip_name
+
+    # Remove existing zip if present
+    if zip_path.exists():
+        zip_path.unlink()
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for item in package_dir.rglob("*"):
+            if item.is_file():
+                # Create path relative to package root (include addon_name/version)
+                relative_path = item.relative_to(package_dir.parent.parent)
+                zip_file.write(item, relative_path)
+                logging.debug(f"  Added to package zip: {relative_path}")
+
+    logging.info(f"Created package zip: {zip_path}")
+    return zip_path
+
+
+def create_package(output_dir: Path = None, skip_services_zip: bool = False,
+                   make_zip: bool = True):
     """Create AYON addon package.
 
     Args:
         output_dir: Custom output directory (default: ./package).
-        skip_zip: Skip creating final zip archive.
+        skip_services_zip: Skip creating services.zip (for dev).
+        make_zip: Create final zip archive for upload.
     """
     if output_dir is None:
         output_dir = PACKAGE_DIR / ADDON_NAME / ADDON_VERSION
@@ -179,20 +212,32 @@ def create_package(output_dir: Path = None, skip_zip: bool = False):
     create_version_file(output_dir)
 
     # Create services zip
-    if not skip_zip:
+    if not skip_services_zip:
         create_services_zip(output_dir)
 
     # Copy package.py
     logging.info("Copying package.py...")
     shutil.copy2(CURRENT_ROOT / "package.py", output_dir / "package.py")
 
+    # Create final zip for upload
+    zip_path = None
+    if make_zip:
+        zip_path = create_final_zip(output_dir)
+
     logging.info(f"\n✓ Package created successfully!")
     logging.info(f"  Location: {output_dir}")
     logging.info(f"  Name: {ADDON_NAME}")
     logging.info(f"  Version: {ADDON_VERSION}")
-    logging.info(f"\nYou can now:")
-    logging.info(f"  1. Upload to AYON server via web UI")
-    logging.info(f"  2. Copy to ayon-backend/addons/ directory")
+
+    if zip_path:
+        logging.info(f"  Zip file: {zip_path}")
+        logging.info(f"\nYou can now:")
+        logging.info(f"  1. Upload {zip_path.name} to AYON server via web UI")
+        logging.info(f"  2. Or copy {output_dir} to ayon-backend/addons/")
+    else:
+        logging.info(f"\nYou can now:")
+        logging.info(f"  1. Copy {output_dir} to ayon-backend/addons/")
+        logging.info(f"  2. Or run again without --skip-zip to create upload package")
 
 
 def main():
@@ -206,9 +251,14 @@ def main():
         help="Output directory path (default: ./package)",
     )
     parser.add_argument(
-        "--skip-zip",
+        "--skip-services-zip",
         action="store_true",
-        help="Skip creating services zip archive",
+        help="Skip creating services.zip archive (for development)",
+    )
+    parser.add_argument(
+        "--no-zip",
+        action="store_true",
+        help="Don't create final zip file (only create package directory)",
     )
     parser.add_argument(
         "--debug",
@@ -226,7 +276,8 @@ def main():
     try:
         create_package(
             output_dir=args.output,
-            skip_zip=args.skip_zip,
+            skip_services_zip=args.skip_services_zip,
+            make_zip=not args.no_zip,
         )
         return 0
     except Exception as e:

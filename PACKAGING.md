@@ -37,7 +37,9 @@ Run the packaging script:
 python create_package.py
 ```
 
-This creates a package in `./package/list_creator/1.0.0/`
+This creates:
+1. Package directory: `./package/list_creator/1.0.0/`
+2. **Ready-to-upload zip file**: `./package/list_creator-1.0.0.zip`
 
 **Options:**
 
@@ -45,11 +47,27 @@ This creates a package in `./package/list_creator/1.0.0/`
 # Specify custom output directory
 python create_package.py --output /path/to/ayon-backend/addons
 
-# Skip creating services zip (for development)
-python create_package.py --skip-zip
+# Skip creating services.zip (for development)
+python create_package.py --skip-services-zip
+
+# Don't create final zip (only package directory)
+python create_package.py --no-zip
 
 # Enable debug logging
 python create_package.py --debug
+```
+
+**Output:**
+```
+INFO: ✓ Package created successfully!
+INFO:   Location: ./package/list_creator/1.0.0
+INFO:   Name: list_creator
+INFO:   Version: 1.0.0
+INFO:   Zip file: ./package/list_creator-1.0.0.zip
+INFO:
+INFO: You can now:
+INFO:   1. Upload list_creator-1.0.0.zip to AYON server via web UI
+INFO:   2. Or copy ./package/list_creator/1.0.0 to ayon-backend/addons/
 ```
 
 ### Method 2: Manual Packaging
@@ -85,19 +103,19 @@ python create_package.py --debug
 
 ## Deploying the Package
 
-### Option 1: Upload via AYON Web UI
+### Option 1: Upload via AYON Web UI (Recommended)
 
-1. **Create a zip of the package:**
+1. **Create the package with zip:**
    ```bash
-   cd package
-   zip -r list_creator-1.0.0.zip list_creator/1.0.0
+   python create_package.py
    ```
+   This creates `package/list_creator-1.0.0.zip`
 
 2. **Upload to AYON:**
    - Open AYON Server web UI
    - Go to **Studio Settings** → **Addons**
    - Click **Upload Addon**
-   - Select `list_creator-1.0.0.zip`
+   - Select `package/list_creator-1.0.0.zip`
    - Click **Upload**
 
 3. **Activate the addon:**

@@ -22,11 +22,12 @@ This service provides automated list creation functionality for AYON projects. I
    ```bash
    python create_package.py
    ```
+   This creates `package/list_creator-1.0.0.zip`
 
 2. **Upload to AYON:**
    - Go to AYON Server → Studio Settings → Addons
    - Click "Upload Addon"
-   - Select the created package zip
+   - Select `package/list_creator-1.0.0.zip`
    - Activate the addon
 
 See [PACKAGING.md](PACKAGING.md) for detailed packaging and deployment instructions.
