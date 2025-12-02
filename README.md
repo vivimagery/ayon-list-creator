@@ -62,7 +62,12 @@ creator.stop()
 
 ## Configuration
 
-Configure list creation in AYON project settings under the `create_daily_lists` key:
+The list creator is configured through AYON's native settings system. Settings can be accessed in two ways:
+
+1. **AYON Server UI**: Studio Settings or Project Settings → List Creator → Create Daily Lists
+2. **Programmatically**: Using the `ayon_api` settings functions
+
+Example configuration:
 
 ```json
 {
@@ -78,6 +83,8 @@ Configure list creation in AYON project settings under the `create_daily_lists` 
   ]
 }
 ```
+
+For detailed configuration instructions, see [SETTINGS_GUIDE.md](SETTINGS_GUIDE.md).
 
 ### Configuration Options
 
