@@ -36,12 +36,7 @@ function defaultfunc {
 }
 
 function build {
-  & cp -r "$script_dir/../../client/ayon_ftrack/common/" "$script_dir/ftrack_common"
-  try {
-    & docker build -t "$IMAGE_FULL_NAME" .
-  } finally {
-    & Remove-Item -Recurse -Force "$script_dir/ftrack_common"
-  }
+  & docker build -t "$IMAGE_FULL_NAME" .
 }
 
 function clean {
@@ -69,19 +64,14 @@ function load-env {
 
 function dev {
   load-env
-  & cp -r "$script_dir/../../client/ayon_ftrack/common/" "$script_dir/ftrack_common"
-  try {
-    & docker run --rm -ti `
-      -v "$($script_dir):/service" `
-      --hostname ftrackproc `
-      --env AYON_API_KEY=$env:AYON_API_KEY `
-      --env AYON_SERVER_URL=$env:AYON_SERVER_URL `
-      --env AYON_ADDON_NAME=ftrack `
-      --env AYON_ADDON_VERSION=$ADDON_VERSION `
-      "$IMAGE_FULL_NAME" python -m processor
-  } finally {
-    & Remove-Item -Recurse -Force "$script_dir/ftrack_common"
-  }
+  & docker run --rm -ti `
+    -v "$($script_dir):/service" `
+    --hostname listcreator `
+    --env AYON_API_KEY=$env:AYON_API_KEY `
+    --env AYON_SERVER_URL=$env:AYON_SERVER_URL `
+    --env AYON_ADDON_NAME=list_creator `
+    --env AYON_ADDON_VERSION=$ADDON_VERSION `
+    "$IMAGE_FULL_NAME" python -m processor
 }
 
 function bash {
