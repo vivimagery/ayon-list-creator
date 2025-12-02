@@ -1,361 +1,325 @@
-import json
+"""AYON List Creator - Daily processor for tracking new projects."""
+
 import uuid
 import threading
 import datetime
-from typing import Any, Union
+from typing import List, Dict, Set
+import time
 
 import ayon_api
-from ayon_api import (
-    get_addon_settings,
-    get_service_addon_name,
-    get_service_addon_version,
-    get_service_addon_settings,
-)
 
-WEEKDAY_MAPPING = {
-    0: "monday",
-    1: "tuesday",
-    2: "wednesday",
-    3: "thursday",
-    4: "friday",
-    5: "saturday",
-    6: "sunday",
+
+# Russian month names for list naming
+RUSSIAN_MONTHS = {
+    1: "Январь",
+    2: "Февраль",
+    3: "Март",
+    4: "Апрель",
+    5: "Май",
+    6: "Июнь",
+    7: "Июль",
+    8: "Август",
+    9: "Сентябрь",
+    10: "Октябрь",
+    11: "Ноябрь",
+    12: "Декабрь",
 }
 
 
 class AyonListCreator:
-    """Handler for creating entity lists directly in AYON using REST API."""
+    """Daily processor for tracking new Project folders in AYON.
 
-    identifier = "create.daily.lists"
-    settings_key = "create_daily_lists"
-    automated_topic = "{}.automated".format(identifier)
+    This service:
+    - Runs daily at a scheduled time
+    - Checks all AYON projects for folders with folderType="Project"
+    - Creates a monthly list (e.g., "Наработка_Май")
+    - Adds new Project folders to the current month's list
+    """
 
-    def __init__(self):
-        self._cycle_timers_by_id = {}
+    def __init__(self, run_hour: int = 9, run_minute: int = 0):
+        """Initialize the list creator.
+
+        Args:
+            run_hour: Hour of day to run (0-23), default 9 AM
+            run_minute: Minute of hour to run (0-59), default 0
+        """
+        self.run_hour = run_hour
+        self.run_minute = run_minute
+        self._timer = None
         self._day_delta = datetime.timedelta(days=1)
         self.log = ayon_api.Logger.get_logger(self.__class__.__name__)
 
-    def _calculate_next_cycle_delta(self, action_settings=None):
-        """Calculate seconds until next scheduled list creation."""
-        if action_settings is None:
-            service_settings = get_service_addon_settings()
-            action_settings = service_settings.get(self.settings_key, {})
+    def _calculate_next_run_time(self) -> float:
+        """Calculate seconds until next scheduled run.
 
-        cycle_hour_start = action_settings.get("cycle_hour_start")
-        if not cycle_hour_start:
-            h = m = s = 0
-        else:
-            h, m, s = [int(v) for v in cycle_hour_start.split(":")]
-
+        Returns:
+            Seconds until next run time.
+        """
         now = datetime.datetime.now()
-        expected_next_trigger = datetime.datetime(
-            now.year, now.month, now.day, h, m, s
+        next_run = datetime.datetime(
+            now.year, now.month, now.day,
+            self.run_hour, self.run_minute, 0
         )
-        if expected_next_trigger <= now:
-            expected_next_trigger += self._day_delta
-        return (expected_next_trigger - now).total_seconds()
+
+        # If today's run time has passed, schedule for tomorrow
+        if next_run <= now:
+            next_run += self._day_delta
+
+        delta_seconds = (next_run - now).total_seconds()
+        self.log.info(
+            f"Next run scheduled at {next_run.strftime('%Y-%m-%d %H:%M:%S')} "
+            f"({delta_seconds / 3600:.1f} hours from now)"
+        )
+        return delta_seconds
 
     def start(self):
-        """Start the automated list creation timer."""
-        self._add_timer_callback()
+        """Start the daily processor service."""
+        self.log.info("Starting AYON List Creator service")
+        self.log.info(f"Daily run time: {self.run_hour:02d}:{self.run_minute:02d}")
+        self._schedule_next_run()
 
     def stop(self):
-        """Stop all timers."""
-        for timer_id in list(self._cycle_timers_by_id.keys()):
-            timer = self._cycle_timers_by_id.pop(timer_id, None)
-            if timer is not None:
-                timer.cancel()
+        """Stop the processor service."""
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+        self.log.info("AYON List Creator service stopped")
 
-    def _add_timer_callback(self):
-        """Add a timer to trigger list creation at scheduled time."""
-        seconds_delta = self._calculate_next_cycle_delta()
+    def _schedule_next_run(self):
+        """Schedule the next daily run."""
+        seconds_until_run = self._calculate_next_run_time()
+        self._timer = threading.Timer(seconds_until_run, self._daily_run)
+        self._timer.start()
 
-        timer_id = uuid.uuid4().hex
-        cycle_timer = threading.Timer(
-            seconds_delta, self._timer_callback, [timer_id]
-        )
-        self._cycle_timers_by_id[timer_id] = cycle_timer
-        cycle_timer.start()
+    def _daily_run(self):
+        """Execute daily list update process."""
+        self.log.info("=" * 60)
+        self.log.info("Starting daily list update")
 
-    def _timer_callback(self, timer_id):
-        """Timer callback to trigger automated list creation."""
-        timer = self._cycle_timers_by_id.pop(timer_id, None)
-        if timer is None:
-            return
+        try:
+            self._process_projects()
+        except Exception as e:
+            self.log.error(f"Error during daily run: {e}", exc_info=True)
 
-        service_settings = get_service_addon_settings()
-        action_settings = service_settings.get(self.settings_key, {})
+        self.log.info("Daily list update completed")
+        self.log.info("=" * 60)
 
-        # Schedule next timer
-        self._add_timer_callback()
+        # Schedule next run
+        self._schedule_next_run()
 
-        datetime_obj = datetime.datetime.now()
-        weekday = WEEKDAY_MAPPING[datetime_obj.weekday()]
+    def _get_current_month_list_name(self) -> str:
+        """Get the list name for current month.
 
-        if weekday not in action_settings.get("cycle_days", []):
-            self.log.debug(
-                f"Automated run on day {weekday} skipped by settings."
-            )
-            return
-
-        # Trigger automated list creation
-        self._automated_run()
-
-    def _automated_run(self):
-        """Run automated list creation for all enabled projects."""
-        # Get all AYON projects
-        ayon_projects = ayon_api.get_projects(fields=["name"])
-
-        # Get action settings for each project
-        action_settings_by_project = self._get_action_settings(
-            [project["name"] for project in ayon_projects]
-        )
-
-        lists_by_project = {}
-        for project_name, action_settings in action_settings_by_project.items():
-            if not action_settings.get("enabled"):
-                continue
-
-            action_lists = [
-                item
-                for item in action_settings.get("lists", [])
-                if item.get("cycle_enabled")
-            ]
-            if action_lists:
-                lists_by_project[project_name] = action_lists
-
-        if not lists_by_project:
-            self.log.info(
-                "No projects have enabled automated list creation"
-            )
-            return
-
-        # Process list creation for each project
-        self._process_lists_creation(lists_by_project)
-
-    def _process_lists_creation(
-        self, lists_by_project: dict[str, list[dict[str, Any]]]
-    ):
-        """Process list creation for multiple projects.
-
-        Args:
-            lists_by_project: Dictionary mapping project names to list definitions.
+        Returns:
+            List name like "Наработка_Май"
         """
         now = datetime.datetime.now()
-        today_obj = datetime.datetime(
-            now.year, now.month, now.day, 0, 0, 0
-        )
+        month_name = RUSSIAN_MONTHS[now.month]
+        return f"Наработка_{month_name}"
 
-        # Prepare fill data for list name templates
-        fill_data = self._get_datetime_data(today_obj)
-
-        for project_name, list_defs in lists_by_project.items():
-            self._create_lists(project_name, list_defs, fill_data)
-
-    def _get_datetime_data(self, datetime_obj: datetime.datetime) -> dict[str, Any]:
-        """Get formatted date/time data for list name templates.
+    def _get_or_create_monthly_list(self, project_name: str) -> Dict:
+        """Get or create the monthly list for a project.
 
         Args:
-            datetime_obj: Datetime object to format.
+            project_name: Name of the AYON project
 
         Returns:
-            Dictionary with formatted date/time strings.
+            Dictionary with list details (id, label)
         """
-        return {
-            "d": datetime_obj.strftime("%d"),
-            "dd": datetime_obj.strftime("%d"),
-            "ddd": datetime_obj.strftime("%a"),
-            "dddd": datetime_obj.strftime("%A"),
-            "m": str(datetime_obj.month),
-            "mm": datetime_obj.strftime("%m"),
-            "mmm": datetime_obj.strftime("%b"),
-            "mmmm": datetime_obj.strftime("%B"),
-            "yy": datetime_obj.strftime("%y"),
-            "yyyy": datetime_obj.strftime("%Y"),
-            "H": str(datetime_obj.hour),
-            "HH": datetime_obj.strftime("%H"),
-            "M": str(datetime_obj.minute),
-            "MM": datetime_obj.strftime("%M"),
-            "S": str(datetime_obj.second),
-            "SS": datetime_obj.strftime("%S"),
-        }
+        list_name = self._get_current_month_list_name()
 
-    def _create_project_list(
-        self,
-        project_name: str,
-        list_name: str,
-        entity_type: str = "version",
-        entity_list_type: str = "generic",
-    ) -> Union[dict[str, Any], None]:
-        """Create a new list in AYON using REST API.
+        # Check if list already exists
+        try:
+            response = ayon_api.get(f"projects/{project_name}/lists")
+            response.raise_for_status()
+            existing_lists = response.data.get("lists", [])
 
-        Args:
-            project_name: Name of the project.
-            list_name: Name of the list to create.
-            entity_type: Type of entities in the list (folder, product, version, etc.).
-            entity_list_type: Type of the list (generic, etc.).
+            for existing_list in existing_lists:
+                if existing_list.get("label") == list_name:
+                    self.log.debug(
+                        f"Found existing list '{list_name}' in project '{project_name}'"
+                    )
+                    return existing_list
+        except Exception as e:
+            self.log.warning(
+                f"Error checking existing lists in '{project_name}': {e}"
+            )
 
-        Returns:
-            Created list data or None if creation failed.
-        """
-        list_id = str(uuid.uuid4().hex)[:24]  # Generate shorter ID
+        # Create new list
+        self.log.info(f"Creating new list '{list_name}' in project '{project_name}'")
+        list_id = str(uuid.uuid4().hex)[:24]
 
         payload = {
             "id": list_id,
-            "entityListType": entity_list_type,
-            "entityType": entity_type,
+            "entityListType": "generic",
+            "entityType": "folder",
             "label": list_name,
             "active": True,
             "items": []
         }
 
         try:
+            response = ayon_api.post(f"projects/{project_name}/lists", **payload)
+            response.raise_for_status()
+            self.log.info(f"Created list '{list_name}' with ID: {list_id}")
+            return {"id": list_id, "label": list_name}
+        except Exception as e:
+            self.log.error(f"Failed to create list '{list_name}': {e}")
+            raise
+
+    def _get_list_folder_ids(self, project_name: str, list_id: str) -> Set[str]:
+        """Get all folder IDs currently in the list.
+
+        Args:
+            project_name: Name of the AYON project
+            list_id: ID of the list
+
+        Returns:
+            Set of folder IDs in the list
+        """
+        try:
+            response = ayon_api.get(f"projects/{project_name}/lists/{list_id}/items")
+            response.raise_for_status()
+            items = response.data.get("items", [])
+            return {item.get("entityId") for item in items if item.get("entityId")}
+        except Exception as e:
+            self.log.warning(
+                f"Error getting list items for list '{list_id}': {e}"
+            )
+            return set()
+
+    def _find_project_folders(self, project_name: str) -> List[Dict]:
+        """Find all folders with folderType="Project" in a project.
+
+        Args:
+            project_name: Name of the AYON project
+
+        Returns:
+            List of folder dictionaries with 'id' and 'name'
+        """
+        try:
+            # Query folders with folderType="Project"
+            response = ayon_api.get(
+                f"projects/{project_name}/folders",
+                folderType="Project"
+            )
+            response.raise_for_status()
+            folders = response.data.get("folders", [])
+
+            project_folders = []
+            for folder in folders:
+                folder_id = folder.get("id")
+                folder_name = folder.get("name")
+                folder_type = folder.get("folderType")
+
+                if folder_type == "Project" and folder_id and folder_name:
+                    project_folders.append({
+                        "id": folder_id,
+                        "name": folder_name
+                    })
+
+            return project_folders
+        except Exception as e:
+            self.log.error(
+                f"Error querying folders in project '{project_name}': {e}"
+            )
+            return []
+
+    def _add_folder_to_list(
+        self, project_name: str, list_id: str, folder_id: str, folder_name: str
+    ):
+        """Add a folder to a list.
+
+        Args:
+            project_name: Name of the AYON project
+            list_id: ID of the list
+            folder_id: ID of the folder to add
+            folder_name: Name of the folder (for logging)
+        """
+        item_id = str(uuid.uuid4().hex)[:24]
+        payload = {
+            "id": item_id,
+            "entityId": folder_id
+        }
+
+        try:
             response = ayon_api.post(
-                f"projects/{project_name}/lists",
+                f"projects/{project_name}/lists/{list_id}/items",
                 **payload
             )
             response.raise_for_status()
             self.log.info(
-                f"Created list '{list_name}' in project '{project_name}'"
+                f"Added folder '{folder_name}' (ID: {folder_id}) to list"
             )
-            return {"id": list_id, "label": list_name}
         except Exception as e:
             self.log.error(
-                f"Failed to create list '{list_name}' "
-                f"in project '{project_name}': {e}"
+                f"Failed to add folder '{folder_name}' to list: {e}"
             )
-            return None
 
-    def _add_items_to_list(
-        self,
-        project_name: str,
-        list_id: str,
-        entity_ids: list[str]
-    ) -> bool:
-        """Add items to an existing list in AYON using REST API.
-
-        Args:
-            project_name: Name of the project.
-            list_id: ID of the list.
-            entity_ids: List of entity IDs to add to the list.
-
-        Returns:
-            True if successful, False otherwise.
-        """
-        if not entity_ids:
-            return True
-
+    def _process_projects(self):
+        """Process all AYON projects and update monthly lists."""
+        # Get all projects
         try:
-            # Add each entity as a list item
-            for idx, entity_id in enumerate(entity_ids):
-                item_payload = {
-                    "id": str(uuid.uuid4().hex)[:24],
-                    "entityId": entity_id,
-                    "position": idx,
-                }
-
-                response = ayon_api.post(
-                    f"projects/{project_name}/lists/{list_id}/items",
-                    **item_payload
-                )
-                response.raise_for_status()
-
-            self.log.info(
-                f"Added {len(entity_ids)} items to list '{list_id}' "
-                f"in project '{project_name}'"
-            )
-            return True
+            response = ayon_api.get("projects")
+            response.raise_for_status()
+            projects = response.data.get("projects", [])
         except Exception as e:
-            self.log.error(
-                f"Failed to add items to list '{list_id}' "
-                f"in project '{project_name}': {e}"
-            )
-            return False
+            self.log.error(f"Failed to get projects list: {e}")
+            return
 
-    def _create_lists(
-        self,
-        project_name: str,
-        list_defs: list[dict[str, Any]],
-        fill_data: dict[str, Any],
-    ):
-        """Create lists in AYON for a project.
+        if not projects:
+            self.log.info("No projects found")
+            return
 
-        Args:
-            project_name: Name of the project.
-            list_defs: List definitions from settings.
-            fill_data: Date/time data for list name templates.
-        """
-        for list_def in list_defs:
-            name_template = list_def.get("name_template", "{yy}{mm}{dd}")
-            list_name = self._fill_list_name_template(name_template, fill_data)
-            if list_name is None:
+        self.log.info(f"Processing {len(projects)} projects")
+
+        for project in projects:
+            project_name = project.get("name")
+            if not project_name:
                 continue
 
-            # Get entity IDs from list definition (if provided)
-            # This is a simplified version - in reality, you would query
-            # AYON for entities matching the list criteria
-            entity_ids = list_def.get("entity_ids", [])
+            self.log.info(f"Processing project: {project_name}")
 
-            # Create the list
-            created_list = self._create_project_list(
-                project_name=project_name,
-                list_name=list_name,
-                entity_type="version",  # Default to version entities
-            )
-
-            if created_list and entity_ids:
-                # Add items to the list
-                self._add_items_to_list(
-                    project_name=project_name,
-                    list_id=created_list["id"],
-                    entity_ids=entity_ids
-                )
-
-    def _get_action_settings(
-        self, project_names: list[str]
-    ) -> dict[str, dict[str, Any]]:
-        """Get action settings for multiple projects.
-
-        Args:
-            project_names: List of project names.
-
-        Returns:
-            Dictionary mapping project names to their action settings.
-        """
-        settings_by_project = {}
-        for project_name in project_names:
             try:
-                project_settings = get_addon_settings(
-                    get_service_addon_name(),
-                    get_service_addon_version(),
-                    project_name,
+                # Get or create monthly list for this project
+                monthly_list = self._get_or_create_monthly_list(project_name)
+                list_id = monthly_list["id"]
+
+                # Get folders already in the list
+                existing_folder_ids = self._get_list_folder_ids(project_name, list_id)
+                self.log.debug(
+                    f"List currently has {len(existing_folder_ids)} folders"
                 )
-                action_settings = project_settings.get(self.settings_key, {})
-                settings_by_project[project_name] = action_settings
+
+                # Find all Project folders in this project
+                project_folders = self._find_project_folders(project_name)
+                self.log.info(
+                    f"Found {len(project_folders)} folders with folderType='Project'"
+                )
+
+                # Add new folders to the list
+                new_folders_added = 0
+                for folder in project_folders:
+                    folder_id = folder["id"]
+                    folder_name = folder["name"]
+
+                    if folder_id not in existing_folder_ids:
+                        self.log.info(f"New folder detected: {folder_name}")
+                        self._add_folder_to_list(
+                            project_name, list_id, folder_id, folder_name
+                        )
+                        new_folders_added += 1
+
+                if new_folders_added > 0:
+                    self.log.info(
+                        f"Added {new_folders_added} new folders to list"
+                    )
+                else:
+                    self.log.info("No new folders to add")
+
             except Exception as e:
-                self.log.warning(
-                    f"Failed to get settings for project '{project_name}': {e}"
+                self.log.error(
+                    f"Error processing project '{project_name}': {e}",
+                    exc_info=True
                 )
-                settings_by_project[project_name] = {}
-        return settings_by_project
-
-    def _fill_list_name_template(
-        self, template: str, data: dict[str, Any]
-    ) -> Union[str, None]:
-        """Fill list name template with date/time data.
-
-        Args:
-            template: Template string with placeholders (e.g., "{yy}{mm}{dd}").
-            data: Dictionary with date/time values.
-
-        Returns:
-            Filled template string or None if formatting failed.
-        """
-        try:
-            return template.format(**data)
-        except Exception:
-            self.log.warning(
-                f"Failed to fill list template '{template}' with data {data}",
-                exc_info=True
-            )
-            return None
+                continue
