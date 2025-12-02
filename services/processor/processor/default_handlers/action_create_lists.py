@@ -99,19 +99,30 @@ class AyonListCreator:
         list_name = self._get_current_month_list_name()
 
         # Check if list already exists
+        self.log.info(f"Checking for existing list '{list_name}'")
         try:
+            self.log.info(f"GET /api/projects/{project_name}/lists")
             response = ayon_api.get(f"projects/{project_name}/lists")
+            self.log.info(f"Response status: {response.status_code}")
             response.raise_for_status()
             existing_lists = response.data.get("lists", [])
+            self.log.info(f"Found {len(existing_lists)} existing lists")
 
             for existing_list in existing_lists:
+                list_name_field = existing_list.get("name")
+                list_label_field = existing_list.get("label")
+                self.log.debug(
+                    f"Existing list: name='{list_name_field}', label='{list_label_field}'"
+                )
                 # Check both 'name' and 'label' fields
                 if (existing_list.get("name") == list_name or
                     existing_list.get("label") == list_name):
-                    self.log.debug(
+                    self.log.info(
                         f"Found existing list '{list_name}' in project '{project_name}'"
                     )
                     return existing_list
+
+            self.log.info(f"No existing list named '{list_name}' found")
         except Exception as e:
             self.log.warning(
                 f"Error checking existing lists in '{project_name}': {e}"
@@ -125,8 +136,13 @@ class AyonListCreator:
             "entityType": "folder"
         }
 
+        self.log.info(f"POST /api/projects/{project_name}/lists")
+        self.log.info(f"Payload: {payload}")
+
         try:
             response = ayon_api.post(f"projects/{project_name}/lists", **payload)
+            self.log.info(f"Response status: {response.status_code}")
+            self.log.info(f"Response data: {response.data}")
             response.raise_for_status()
             list_data = response.data
             list_id = list_data.get("id")
@@ -134,6 +150,13 @@ class AyonListCreator:
             return {"id": list_id, "label": list_name}
         except Exception as e:
             self.log.error(f"Failed to create list '{list_name}': {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                self.log.error(f"Response status: {e.response.status_code}")
+                self.log.error(f"Response text: {e.response.text}")
+                try:
+                    self.log.error(f"Response JSON: {e.response.json()}")
+                except:
+                    pass
             raise
 
     def _get_list_folder_ids(self, project_name: str, list_id: str) -> Set[str]:
@@ -147,9 +170,11 @@ class AyonListCreator:
             Set of folder IDs in the list
         """
         try:
+            self.log.debug(f"GET /api/projects/{project_name}/lists/{list_id}/items")
             response = ayon_api.get(f"projects/{project_name}/lists/{list_id}/items")
             response.raise_for_status()
             items = response.data.get("items", [])
+            self.log.debug(f"Found {len(items)} items in list")
             return {item.get("entityId") for item in items if item.get("entityId")}
         except Exception as e:
             self.log.warning(
@@ -168,12 +193,14 @@ class AyonListCreator:
         """
         try:
             # Query folders with folderType="Project"
+            self.log.info(f"GET /api/projects/{project_name}/folders?folderType=Project")
             response = ayon_api.get(
                 f"projects/{project_name}/folders",
                 folderType="Project"
             )
             response.raise_for_status()
             folders = response.data.get("folders", [])
+            self.log.info(f"API returned {len(folders)} folders")
 
             project_folders = []
             for folder in folders:
@@ -181,12 +208,17 @@ class AyonListCreator:
                 folder_name = folder.get("name")
                 folder_type = folder.get("folderType")
 
+                self.log.debug(
+                    f"Folder: name={folder_name}, type={folder_type}, id={folder_id}"
+                )
+
                 if folder_type == "Project" and folder_id and folder_name:
                     project_folders.append({
                         "id": folder_id,
                         "name": folder_name
                     })
 
+            self.log.info(f"Filtered to {len(project_folders)} Project folders")
             return project_folders
         except Exception as e:
             self.log.error(
@@ -209,11 +241,15 @@ class AyonListCreator:
             "entityId": folder_id
         }
 
+        self.log.info(f"POST /api/projects/{project_name}/lists/{list_id}/items")
+        self.log.info(f"Payload: {payload}")
+
         try:
             response = ayon_api.post(
                 f"projects/{project_name}/lists/{list_id}/items",
                 **payload
             )
+            self.log.info(f"Response status: {response.status_code}")
             response.raise_for_status()
             self.log.info(
                 f"Added folder '{folder_name}' (ID: {folder_id}) to list"
@@ -222,6 +258,13 @@ class AyonListCreator:
             self.log.error(
                 f"Failed to add folder '{folder_name}' to list: {e}"
             )
+            if hasattr(e, 'response') and e.response is not None:
+                self.log.error(f"Response status: {e.response.status_code}")
+                self.log.error(f"Response text: {e.response.text}")
+                try:
+                    self.log.error(f"Response JSON: {e.response.json()}")
+                except:
+                    pass
 
     def _process_projects(self):
         """Process the ImmersRender project and update monthly lists."""
