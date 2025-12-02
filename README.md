@@ -9,6 +9,7 @@ This service provides automated list creation functionality for AYON projects. I
 ## Features
 
 - **Automated List Creation**: Schedule list creation at specific times and days
+- **Manual Actions**: Create lists on-demand via AYON web UI buttons
 - **Flexible Naming**: Use date/time templates for dynamic list names (e.g., `{yy}{mm}{dd}`)
 - **Project-Based Configuration**: Different settings for each project
 - **Direct AYON Integration**: Uses native AYON REST API endpoints
@@ -85,6 +86,25 @@ Example configuration:
 ```
 
 For detailed configuration instructions, see [SETTINGS_GUIDE.md](SETTINGS_GUIDE.md).
+
+### Manual List Creation (Actions)
+
+You can also create lists manually using AYON web UI actions:
+
+1. **Create Lists Action**: Create lists from your configured templates
+   - Navigate to a project in AYON web UI
+   - Click the Actions button
+   - Select "Create Lists" under the "Lists" category
+   - Choose which lists to create and click Execute
+
+2. **Create Custom List Action**: Create a one-off list with custom name
+   - Navigate to a project in AYON web UI
+   - Click the Actions button
+   - Select "Create Custom List" under the "Lists" category
+   - Enter list name, entity type, and optional entity IDs
+   - Click Execute
+
+For detailed instructions on using actions, see [ACTIONS_GUIDE.md](ACTIONS_GUIDE.md).
 
 ### Configuration Options
 
