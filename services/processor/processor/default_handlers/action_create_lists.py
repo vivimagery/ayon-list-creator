@@ -31,10 +31,13 @@ class AyonListCreator:
 
     This service:
     - Runs daily at a scheduled time
-    - Checks all AYON projects for folders with folderType="Project"
+    - Checks the ImmersRender project for folders with folderType="Project"
     - Creates a monthly list (e.g., "Наработка_Май")
     - Adds new Project folders to the current month's list
     """
+
+    # AYON project to track
+    TARGET_PROJECT = "ImmersRender"
 
     def __init__(self, run_hour: int = 9, run_minute: int = 0):
         """Initialize the list creator.
@@ -257,69 +260,61 @@ class AyonListCreator:
             )
 
     def _process_projects(self):
-        """Process all AYON projects and update monthly lists."""
-        # Get all projects
+        """Process the ImmersRender project and update monthly lists."""
+        project_name = self.TARGET_PROJECT
+
+        self.log.info(f"Processing project: {project_name}")
+
         try:
-            response = ayon_api.get("projects")
+            # Verify project exists
+            response = ayon_api.get(f"projects/{project_name}")
             response.raise_for_status()
-            projects = response.data.get("projects", [])
         except Exception as e:
-            self.log.error(f"Failed to get projects list: {e}")
+            self.log.error(
+                f"Failed to access project '{project_name}': {e}. "
+                "Make sure the project exists in AYON."
+            )
             return
 
-        if not projects:
-            self.log.info("No projects found")
-            return
+        try:
+            # Get or create monthly list for this project
+            monthly_list = self._get_or_create_monthly_list(project_name)
+            list_id = monthly_list["id"]
 
-        self.log.info(f"Processing {len(projects)} projects")
+            # Get folders already in the list
+            existing_folder_ids = self._get_list_folder_ids(project_name, list_id)
+            self.log.debug(
+                f"List currently has {len(existing_folder_ids)} folders"
+            )
 
-        for project in projects:
-            project_name = project.get("name")
-            if not project_name:
-                continue
+            # Find all Project folders in this project
+            project_folders = self._find_project_folders(project_name)
+            self.log.info(
+                f"Found {len(project_folders)} folders with folderType='Project'"
+            )
 
-            self.log.info(f"Processing project: {project_name}")
+            # Add new folders to the list
+            new_folders_added = 0
+            for folder in project_folders:
+                folder_id = folder["id"]
+                folder_name = folder["name"]
 
-            try:
-                # Get or create monthly list for this project
-                monthly_list = self._get_or_create_monthly_list(project_name)
-                list_id = monthly_list["id"]
-
-                # Get folders already in the list
-                existing_folder_ids = self._get_list_folder_ids(project_name, list_id)
-                self.log.debug(
-                    f"List currently has {len(existing_folder_ids)} folders"
-                )
-
-                # Find all Project folders in this project
-                project_folders = self._find_project_folders(project_name)
-                self.log.info(
-                    f"Found {len(project_folders)} folders with folderType='Project'"
-                )
-
-                # Add new folders to the list
-                new_folders_added = 0
-                for folder in project_folders:
-                    folder_id = folder["id"]
-                    folder_name = folder["name"]
-
-                    if folder_id not in existing_folder_ids:
-                        self.log.info(f"New folder detected: {folder_name}")
-                        self._add_folder_to_list(
-                            project_name, list_id, folder_id, folder_name
-                        )
-                        new_folders_added += 1
-
-                if new_folders_added > 0:
-                    self.log.info(
-                        f"Added {new_folders_added} new folders to list"
+                if folder_id not in existing_folder_ids:
+                    self.log.info(f"New folder detected: {folder_name}")
+                    self._add_folder_to_list(
+                        project_name, list_id, folder_id, folder_name
                     )
-                else:
-                    self.log.info("No new folders to add")
+                    new_folders_added += 1
 
-            except Exception as e:
-                self.log.error(
-                    f"Error processing project '{project_name}': {e}",
-                    exc_info=True
+            if new_folders_added > 0:
+                self.log.info(
+                    f"Added {new_folders_added} new folders to list"
                 )
-                continue
+            else:
+                self.log.info("No new folders to add")
+
+        except Exception as e:
+            self.log.error(
+                f"Error processing project '{project_name}': {e}",
+                exc_info=True
+            )
