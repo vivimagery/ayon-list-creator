@@ -1,0 +1,26 @@
+[project]
+name = "ayon-list-creator"
+version = "1.0.0"
+description = "List Creator addon for AYON - Automated and manual list creation"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "ayon-python-api>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]  # Line too long

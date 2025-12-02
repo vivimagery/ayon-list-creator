@@ -16,6 +16,23 @@ This service provides automated list creation functionality for AYON projects. I
 
 ## Installation
 
+### For AYON Server (Addon)
+
+1. **Create the package:**
+   ```bash
+   python create_package.py
+   ```
+
+2. **Upload to AYON:**
+   - Go to AYON Server → Studio Settings → Addons
+   - Click "Upload Addon"
+   - Select the created package zip
+   - Activate the addon
+
+See [PACKAGING.md](PACKAGING.md) for detailed packaging and deployment instructions.
+
+### For Development
+
 ```bash
 pip install ayon-api
 ```
