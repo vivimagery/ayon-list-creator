@@ -132,7 +132,7 @@ class AyonListCreator:
         self.log.info(f"Creating new list '{list_name}' in project '{project_name}'")
 
         payload = {
-            "name": list_name,
+            "label": list_name,
             "entityType": "folder"
         }
 
