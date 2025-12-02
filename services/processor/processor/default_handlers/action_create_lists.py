@@ -51,7 +51,9 @@ class AyonListCreator:
         """Start the processor service."""
         self.log.info("Starting AYON List Creator service")
         self.log.info(f"Running every {self.RUN_INTERVAL_SECONDS} seconds")
-        self._schedule_next_run()
+
+        # Run immediately on startup
+        self._run()
 
     def stop(self):
         """Stop the processor service."""
