@@ -1,6 +1,2 @@
 AYON_SERVER_URL=http://10.0.0.60:5000
 AYON_API_KEY=aabbccddeeffgghhiijjzzyyxx112233
-
-# Daily run schedule (24-hour format)
-LIST_CREATOR_RUN_HOUR=9
-LIST_CREATOR_RUN_MINUTE=0

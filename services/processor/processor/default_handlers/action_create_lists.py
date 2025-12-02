@@ -1,12 +1,10 @@
-"""AYON List Creator - Daily processor for tracking new projects."""
+"""AYON List Creator - Processor for tracking new projects."""
 
-import os
 import uuid
 import threading
 import datetime
 import logging
 from typing import List, Dict, Set
-import time
 
 import ayon_api
 
@@ -29,37 +27,17 @@ RUSSIAN_MONTHS = {
 
 
 class AyonListCreator:
-    """Daily processor for tracking new Project folders in AYON.
+    """Processor for tracking new Project folders in AYON.
 
-    This service:
-    - Runs daily at a scheduled time
-    - Checks the ImmersRender project for folders with folderType="Project"
-    - Creates a monthly list (e.g., "Наработка_Май")
-    - Adds new Project folders to the current month's list
+    Runs every 5 minutes and checks the ImmersRender project for new folders.
     """
 
-    # AYON project to track
     TARGET_PROJECT = "ImmersRender"
+    RUN_INTERVAL_SECONDS = 300  # 5 minutes
 
-    def __init__(self, run_hour: int = None, run_minute: int = None):
-        """Initialize the list creator.
-
-        Args:
-            run_hour: Hour of day to run (0-23). If None, reads from
-                     LIST_CREATOR_RUN_HOUR env var (default: 9)
-            run_minute: Minute of hour to run (0-59). If None, reads from
-                       LIST_CREATOR_RUN_MINUTE env var (default: 0)
-        """
-        # Read from environment variables if not provided
-        if run_hour is None:
-            run_hour = int(os.getenv('LIST_CREATOR_RUN_HOUR', '9'))
-        if run_minute is None:
-            run_minute = int(os.getenv('LIST_CREATOR_RUN_MINUTE', '0'))
-
-        self.run_hour = run_hour
-        self.run_minute = run_minute
+    def __init__(self):
+        """Initialize the list creator."""
         self._timer = None
-        self._day_delta = datetime.timedelta(days=1)
         self.log = logging.getLogger(self.__class__.__name__)
 
         # Configure logging if not already configured
@@ -69,33 +47,10 @@ class AyonListCreator:
                 format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             )
 
-    def _calculate_next_run_time(self) -> float:
-        """Calculate seconds until next scheduled run.
-
-        Returns:
-            Seconds until next run time.
-        """
-        now = datetime.datetime.now()
-        next_run = datetime.datetime(
-            now.year, now.month, now.day,
-            self.run_hour, self.run_minute, 0
-        )
-
-        # If today's run time has passed, schedule for tomorrow
-        if next_run <= now:
-            next_run += self._day_delta
-
-        delta_seconds = (next_run - now).total_seconds()
-        self.log.info(
-            f"Next run scheduled at {next_run.strftime('%Y-%m-%d %H:%M:%S')} "
-            f"({delta_seconds / 3600:.1f} hours from now)"
-        )
-        return delta_seconds
-
     def start(self):
-        """Start the daily processor service."""
+        """Start the processor service."""
         self.log.info("Starting AYON List Creator service")
-        self.log.info(f"Daily run time: {self.run_hour:02d}:{self.run_minute:02d}")
+        self.log.info(f"Running every {self.RUN_INTERVAL_SECONDS} seconds")
         self._schedule_next_run()
 
     def stop(self):
@@ -106,23 +61,16 @@ class AyonListCreator:
         self.log.info("AYON List Creator service stopped")
 
     def _schedule_next_run(self):
-        """Schedule the next daily run."""
-        seconds_until_run = self._calculate_next_run_time()
-        self._timer = threading.Timer(seconds_until_run, self._daily_run)
+        """Schedule the next run."""
+        self._timer = threading.Timer(self.RUN_INTERVAL_SECONDS, self._run)
         self._timer.start()
 
-    def _daily_run(self):
-        """Execute daily list update process."""
-        self.log.info("=" * 60)
-        self.log.info("Starting daily list update")
-
+    def _run(self):
+        """Execute list update process."""
         try:
             self._process_projects()
         except Exception as e:
-            self.log.error(f"Error during daily run: {e}", exc_info=True)
-
-        self.log.info("Daily list update completed")
-        self.log.info("=" * 60)
+            self.log.error(f"Error during run: {e}", exc_info=True)
 
         # Schedule next run
         self._schedule_next_run()
